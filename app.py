@@ -1,0 +1,51 @@
+import os, sqlite3
+from contextlib import contextmanager
+from flask import Flask, jsonify, request, render_template
+app=Flask(__name__)
+app.config['MAX_CONTENT_LENGTH']=32768
+@contextmanager
+def conn():
+    db=sqlite3.connect(os.getenv('DATABASE_PATH','app.db'));db.row_factory=sqlite3.Row
+    try:yield db;db.commit()
+    finally:db.close()
+with conn() as db:
+    db.execute('CREATE TABLE IF NOT EXISTS faqs(id INTEGER PRIMARY KEY,question TEXT NOT NULL,answer TEXT NOT NULL,category TEXT NOT NULL DEFAULT "General")')
+    if db.execute('SELECT COUNT(*) FROM faqs').fetchone()[0]==0:
+        db.executemany('INSERT INTO faqs(question,answer,category) VALUES(?,?,?)',[('How do I reset my password?','Open settings and select Reset password.','Accounts'),('Where can I see my invoices?','Open Billing → Invoices.','Billing')])
+@app.get('/')
+def home():return render_template('index.html')
+@app.get('/api/faqs')
+def faqs():
+    query=request.args.get('q','').strip().lower()
+    with conn() as db:
+        if query:result=db.execute('SELECT * FROM faqs WHERE lower(question) LIKE ? OR lower(answer) LIKE ? ORDER BY id DESC LIMIT 50',('%'+query+'%','%'+query+'%')).fetchall()
+        else:result=db.execute('SELECT * FROM faqs ORDER BY id DESC LIMIT 50').fetchall()
+        return jsonify([dict(row) for row in result])
+@app.post('/api/faqs')
+def create_faq():
+    data=request.get_json(silent=True) or {};question=str(data.get('question','')).strip();answer=str(data.get('answer','')).strip();category=str(data.get('category','General')).strip() or 'General'
+    if not question or not answer:return jsonify(error='Question and answer are required'),422
+    with conn() as db:
+        cur=db.execute('INSERT INTO faqs(question,answer,category) VALUES(?,?,?)',(question,answer,category))
+        return jsonify(id=cur.lastrowid,question=question,answer=answer,category=category),201
+@app.delete('/api/faqs/<int:id>')
+def delete_faq(id):
+    with conn() as db:
+        if not db.execute('DELETE FROM faqs WHERE id=?',(id,)).rowcount:return jsonify(error='Not found'),404
+        return jsonify(deleted=True)
+
+@app.after_request
+def security_headers(response):
+    response.headers['X-Content-Type-Options']='nosniff'
+    response.headers['Referrer-Policy']='no-referrer'
+    response.headers['X-Frame-Options']='DENY'
+    return response
+@app.get('/api/health')
+def health():
+    return jsonify(status='ok')
+@app.get('/api/insights')
+def insights():
+    with conn() as db:
+        return jsonify(total_faqs=db.execute('SELECT COUNT(*) FROM faqs').fetchone()[0],categories=[dict(r) for r in db.execute('SELECT category,COUNT(*) count FROM faqs GROUP BY category ORDER BY category')])
+
+if __name__=='__main__':app.run(debug=os.getenv('FLASK_DEBUG') == '1')
