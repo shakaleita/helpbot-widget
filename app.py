@@ -3,6 +3,24 @@ from contextlib import contextmanager
 from flask import Flask, jsonify, request, render_template
 app=Flask(__name__)
 app.config['MAX_CONTENT_LENGTH']=32768
+
+# Optional local API token; production mode rejects unauthenticated API requests.
+import hmac
+
+@app.before_request
+def require_api_auth():
+    if not request.path.startswith('/api/') or request.path == '/api/health':
+        return None
+    token = os.getenv('API_TOKEN')
+    if os.getenv('APP_ENV') != 'production' and not token:
+        return None
+    if not token:
+        return jsonify(error='API authentication must be configured in production'), 503
+    if not hmac.compare_digest(request.headers.get('X-API-Token', ''), token):
+        return jsonify(error='Unauthorized'), 401
+    return None
+
+
 @contextmanager
 def conn():
     db=sqlite3.connect(os.getenv('DATABASE_PATH','app.db'));db.row_factory=sqlite3.Row
