@@ -67,3 +67,18 @@ def insights():
         return jsonify(total_faqs=db.execute('SELECT COUNT(*) FROM faqs').fetchone()[0],categories=[dict(r) for r in db.execute('SELECT category,COUNT(*) count FROM faqs GROUP BY category ORDER BY category')])
 
 if __name__=='__main__':app.run(debug=os.getenv('FLASK_DEBUG') == '1')
+
+
+@app.get('/api/export/faqs.csv')
+def export_faqs_csv():
+    """Download a read-only snapshot of the local demo dataset."""
+    from flask import Response
+    from data_export import serialize_csv
+    with conn() as connection:
+        cursor = connection.execute("SELECT id,question,answer,category FROM faqs ORDER BY id")
+        columns = [column[0] for column in cursor.description]
+        content = serialize_csv(cursor.fetchall(), columns)
+    response = Response(content, mimetype='text/csv')
+    response.headers['Content-Disposition'] = 'attachment; filename="faqs.csv"'
+    response.headers['Cache-Control'] = 'no-store'
+    return response
