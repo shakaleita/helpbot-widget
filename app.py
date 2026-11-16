@@ -41,8 +41,17 @@ def home():return render_template('index.html')
 @app.get('/api/faqs')
 def faqs():
     query=request.args.get('q','').strip().lower()
+    if len(query)>120:return jsonify(error='Search query too long'),422
     with conn() as db:
-        if query:result=db.execute('SELECT * FROM faqs WHERE lower(question) LIKE ? OR lower(answer) LIKE ? ORDER BY id DESC LIMIT 50',('%'+query+'%','%'+query+'%')).fetchall()
+        if query:
+            # Literal substring search: wildcard characters are not SQL operators.
+            literal=query.replace('\\','\\\\').replace('%','\\%').replace('_','\\_')
+            pattern='%'+literal+'%'
+            result=db.execute("""SELECT * FROM faqs
+                WHERE lower(question) LIKE ? ESCAPE '\\'
+                   OR lower(answer) LIKE ? ESCAPE '\\'
+                ORDER BY CASE WHEN lower(question) LIKE ? ESCAPE '\\' THEN 0 ELSE 1 END,
+                         id DESC LIMIT 50""",(pattern,pattern,pattern)).fetchall()
         else:result=db.execute('SELECT * FROM faqs ORDER BY id DESC LIMIT 50').fetchall()
         return jsonify([dict(row) for row in result])
 @app.post('/api/faqs')
