@@ -24,8 +24,14 @@ def require_api_auth():
 @contextmanager
 def conn():
     db=sqlite3.connect(os.getenv('DATABASE_PATH','app.db'));db.row_factory=sqlite3.Row
-    try:yield db;db.commit()
-    finally:db.close()
+    try:
+        yield db
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
 with conn() as db:
     db.execute('CREATE TABLE IF NOT EXISTS faqs(id INTEGER PRIMARY KEY,question TEXT NOT NULL,answer TEXT NOT NULL,category TEXT NOT NULL DEFAULT "General")')
     if db.execute('SELECT COUNT(*) FROM faqs').fetchone()[0]==0:
@@ -66,7 +72,7 @@ def insights():
     with conn() as db:
         return jsonify(total_faqs=db.execute('SELECT COUNT(*) FROM faqs').fetchone()[0],categories=[dict(r) for r in db.execute('SELECT category,COUNT(*) count FROM faqs GROUP BY category ORDER BY category')])
 
-if __name__=='__main__':app.run(debug=os.getenv('FLASK_DEBUG') == '1')
+
 
 
 @app.get('/api/export/faqs.csv')
@@ -82,3 +88,5 @@ def export_faqs_csv():
     response.headers['Content-Disposition'] = 'attachment; filename="faqs.csv"'
     response.headers['Cache-Control'] = 'no-store'
     return response
+
+if __name__=='__main__':app.run(debug=os.getenv('FLASK_DEBUG') == '1')
