@@ -38,3 +38,12 @@ class FAQTest(unittest.TestCase):
         self.assertFalse(any(x['id']==ident for x in self.client.get('/api/faqs?q=export').json))
     def test_validation(self):
         self.assertEqual(self.client.post('/api/faqs',json={'question':'','answer':'Hi'}).status_code,422)
+
+    def test_search_treats_sql_wildcards_literally(self):
+        self.assertEqual(self.client.get('/api/faqs?q=%25').json,[])
+        self.assertEqual(self.client.get('/api/faqs?q=_').json,[])
+        self.assertEqual(self.client.get('/api/faqs?q='+'x'*121).status_code,422)
+        result=self.client.post('/api/faqs',json={'question':'What is 50%?','answer':'Fifty percent'})
+        self.assertEqual(result.status_code,201)
+        matching=self.client.get('/api/faqs?q=%25').json
+        self.assertEqual([x['id'] for x in matching],[result.json['id']])
